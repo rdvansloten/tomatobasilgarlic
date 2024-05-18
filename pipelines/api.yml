@@ -1,0 +1,68 @@
+pool: 'Azure Pipelines'
+
+variables:
+- name: app
+  value: your-function-app-name
+- name: rg
+  value: your-resource-group
+- name: workingDirectory
+  value: ./api
+
+trigger:
+  branches:
+    include:
+    - main
+  paths:
+    include:
+    - api
+
+steps:
+- task: AzureCLI@2
+  displayName: Build requirements for application $(app)
+  inputs:
+    azureSubscription: 'Your Service Connection Here'
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    workingDirectory: $(workingDirectory)
+    inlineScript: |
+      python -m venv worker_venv
+      source worker_venv/bin/activate
+      pip install setuptools
+      pip install -r requirements.txt
+
+- task: ArchiveFiles@2
+  displayName: "Archive files"
+  inputs:
+    rootFolderOrFile: $(workingDirectory)
+    includeRootFolder: false
+    archiveFile: "$(Build.ArtifactStagingDirectory)/build.zip"
+
+- task: AzureCLI@2
+  displayName: Restarting Azure Function $(app)
+  inputs:
+    azureSubscription: 'Your Service Connection Here'
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    workingDirectory: $(workingDirectory)
+    inlineScript: |
+      az functionapp restart \
+        --resource-group $(rg) \
+        --name $(app)
+
+- task: AzureCLI@2
+  displayName: Deploy application $(app) to Azure Function
+  inputs:
+    azureSubscription: 'Your Service Connection Here'
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    workingDirectory: $(workingDirectory)
+    inlineScript: |
+      az functionapp deployment source config-zip \
+        --resource-group $(rg) \
+        --name $(app) \
+        --src "$(Build.ArtifactStagingDirectory)/build.zip" \
+        --build-remote true
+      
+      az functionapp restart \
+        --resource-group $(rg) \
+        --name $(app)
